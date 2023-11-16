@@ -6,9 +6,8 @@ RUN USER=root cargo new --bin app
 WORKDIR /app
 
 RUN apk add --no-cache musl-dev
-#RUN rustup target add x86_64-unknown-linux-musl
 
-# Copy the Cargo.toml and Cargo.lock files and build the dependencies
+# Copy the Cargo.toml and Cargo.lock files and build the dependencies to cache them
 COPY ./Cargo.toml ./Cargo.lock ./
 RUN cargo build --release
 RUN rm src/*.rs
@@ -21,7 +20,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # Stage 2: Prepare the final image
-FROM ubuntu:20.04
+FROM alpine
 
 # Copy the build artifact from the build stage
 COPY --from=builder /app/target/release/filewatch-signaler .

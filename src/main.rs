@@ -1,15 +1,18 @@
 use std::path::{Path, PathBuf};
 use std::thread;
+use std::time::Duration;
 use clap::Parser;
 use env_logger::Env;
 
 use sysinfo::{System, SystemExt, ProcessExt, PidExt};
 use nix::sys::signal::{kill, Signal};
 use nix::unistd::Pid;
-use notify::{Config, Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_full::{DebouncedEvent, new_debouncer, notify};
+use notify_debouncer_full::notify::{Event, RecursiveMode, Watcher};
+
+// use notify::{Config, Event, PollWatcher, RecommendedWatcher, RecursiveMode, Watcher};
 #[macro_use]
 extern crate log;
-
 
 /// Simple program that watches a file for changes and sends a SIGHUP signal to a process when the file changes.
 #[derive(Parser, Debug)]
@@ -42,48 +45,69 @@ fn main() {
         warn!("Could not find process with name: {}", process_name);
     }
 
-    watch(PathBuf::from(&watch_file), move |_event| {
+    watch_debouncer(PathBuf::from(&watch_file), move |_event| {
         thread::sleep(args.wait_time);
         info!("File changed. Sending signal.");
         send_sighup_to_process(&process_name);
     }).expect("Error watching file");
 }
 
-fn poll<P: AsRef<Path>, F: Fn(Event)>(path: P, event_handler: F) -> notify::Result<()> {
+// fn poll<P: AsRef<Path>, F: Fn(Event)>(path: P, event_handler: F) -> notify::Result<()> {
+//     let (tx, rx) = std::sync::mpsc::channel();
+//
+//     let tx_c = tx.clone();
+//     let mut watcher = PollWatcher::new(
+//         move |watch_event| {
+//             tx_c.send(watch_event).unwrap();
+//         },
+//         Config::default().with_compare_contents(true).with_poll_interval(std::time::Duration::from_secs(300)),
+//     )?;
+//
+//
+//     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
+//
+//     for e in rx {
+//         debug!("Watch event {e:?}");
+//         match e {
+//             Ok(e) => event_handler(e),
+//             Err(err) => error!("Error in WatchEvent: {}", err)
+//         }
+//
+//     }
+//
+//     Ok(())
+// }
+// fn watch<P: AsRef<Path>, F: Fn(Event)>(path: P, event_handler: F) -> notify::Result<()> {
+//     let (tx, rx) = std::sync::mpsc::channel();
+//
+//     // Automatically select the best implementation for your platform.
+//     // You can also access each implementation directly e.g. INotifyWatcher.
+//     let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
+//
+//     // Add a path to be watched. All files and directories at that path and
+//     // below will be monitored for changes.
+//     watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
+//
+//     for res in rx {
+//         match res {
+//             Ok(event) => event_handler(event),
+//             Err(error) => error!("Error: {error:?}"),
+//         }
+//     }
+//
+//     Ok(())
+// }
+
+fn watch_debouncer<P: AsRef<Path>, F: Fn(Vec<DebouncedEvent>)>(path: P, event_handler: F) -> notify::Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
 
-    let tx_c = tx.clone();
-    let mut watcher = PollWatcher::new(
-        move |watch_event| {
-            tx_c.send(watch_event).unwrap();
-        },
-        Config::default().with_compare_contents(true).with_poll_interval(std::time::Duration::from_secs(300)),
-    )?;
+    let mut debouncer = new_debouncer(Duration::from_secs(2), None, tx)?;
 
+    debouncer
+        .watcher()
+        .watch(path.as_ref(), RecursiveMode::Recursive)
+        .unwrap();
 
-    watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
-
-    for e in rx {
-        debug!("Watch event {e:?}");
-        match e {
-            Ok(e) => event_handler(e),
-            Err(err) => error!("Error in WatchEvent: {}", err)
-        }
-
-    }
-
-    Ok(())
-}
-fn watch<P: AsRef<Path>, F: Fn(Event)>(path: P, event_handler: F) -> notify::Result<()> {
-    let (tx, rx) = std::sync::mpsc::channel();
-
-    // Automatically select the best implementation for your platform.
-    // You can also access each implementation directly e.g. INotifyWatcher.
-    let mut watcher = RecommendedWatcher::new(tx, Config::default())?;
-
-    // Add a path to be watched. All files and directories at that path and
-    // below will be monitored for changes.
-    watcher.watch(path.as_ref(), RecursiveMode::Recursive)?;
 
     for res in rx {
         match res {
