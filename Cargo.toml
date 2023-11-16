@@ -1,0 +1,15 @@
+[package]
+name = "filewatch-signaler"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+nix = { version= "0.27.1", features = ["process", "signal"] }
+sysinfo = "0.29.10"
+notify = "6.1.1"
+log = "0.4.0"
+env_logger = "0.10.0"
+clap = { version = "4.4.8", features = ["derive", "env"] }
+humantime = "2.1.0"
